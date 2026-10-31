@@ -1,0 +1,128 @@
+name: Terraform Apply
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "**.tf"
+      - ".terraform.lock.hcl"
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: terraform-dev
+  cancel-in-progress: false
+
+env:
+  TF_VAR_aws_region: ${{ vars.TF_VAR_AWS_REGION }}
+  TF_VAR_project: ${{ vars.TF_VAR_PROJECT }}
+  TF_VAR_environment: ${{ vars.TF_VAR_ENVIRONMENT }}
+  TF_VAR_database_password: ${{ secrets.TF_VAR_DATABASE_PASSWORD }}
+
+jobs:
+  plan:
+    name: plan
+    runs-on: ubuntu-latest
+    outputs:
+      summary: ${{ steps.summary.outputs.summary }}
+      changes: ${{ steps.summary.outputs.changes }}
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.15.8
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.TF_VAR_AWS_REGION }}
+
+      - name: Terraform init
+        run: terraform init -input=false
+
+      - name: Terraform plan
+        shell: bash
+        run: terraform plan -no-color -input=false | tee plan.txt
+
+      - name: Summarize plan
+        id: summary
+        shell: bash
+        run: |
+          SUMMARY=$(grep -E '^(Plan: |No changes\.)' plan.txt | head -1)
+          if [ -z "$SUMMARY" ]; then echo "No plan summary found"; exit 1; fi
+          echo "summary=$SUMMARY" >> "$GITHUB_OUTPUT"
+          if [[ "$SUMMARY" == Plan:* ]]; then
+            echo "changes=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changes=false" >> "$GITHUB_OUTPUT"
+          fi
+          {
+            echo "### Terraform plan (main)"
+            echo "**$SUMMARY**"
+            echo ""
+            echo "<details><summary>Show plan</summary>"
+            echo ""
+            echo '```'
+            cat plan.txt
+            echo '```'
+            echo "</details>"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  apply:
+    name: apply
+    needs: plan
+    if: needs.plan.outputs.changes == 'true'
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.15.8
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.TF_VAR_AWS_REGION }}
+
+      - name: Terraform init
+        run: terraform init -input=false
+
+      - name: Terraform plan (to apply)
+        shell: bash
+        run: terraform plan -no-color -input=false -out=tfplan | tee plan.txt
+
+      - name: Confirm plan matches the reviewed plan
+        shell: bash
+        env:
+          REVIEWED: ${{ needs.plan.outputs.summary }}
+        run: |
+          NOW=$(grep -E '^(Plan: |No changes\.)' plan.txt | head -1)
+          echo "Reviewed: $REVIEWED"
+          echo "Now:      $NOW"
+          if [ "$NOW" != "$REVIEWED" ]; then
+            echo "The plan changed since it was reviewed. Stopping."
+            exit 1
+          fi
+
+      - name: Terraform apply
+        run: terraform apply -input=false -no-color tfplan
+
+      - name: Report success
+        if: success()
+        run: echo "### Deployment succeeded" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Report failure
+        if: failure()
+        run: echo "### Deployment FAILED. Check the failed step in this run." >> "$GITHUB_STEP_SUMMARY"
