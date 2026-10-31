@@ -51,15 +51,26 @@ jobs:
         shell: bash
         run: terraform plan -no-color -input=false -out=tfplan | tee plan.txt
 
+      - name: Upload full plan
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-plan
+          path: plan.txt
+          if-no-files-found: ignore
+
       - name: Post plan to PR
-        if: always() && github.event_name == 'pull_request'
+        if: always()
         uses: actions/github-script@v7
         with:
           script: |
             const fs = require('fs');
-            let plan = fs.existsSync('plan.txt') ? fs.readFileSync('plan.txt', 'utf8') : 'No plan was produced. Check the failed step in the run.';
-            if (plan.length > 60000) plan = plan.slice(0, 60000) + '\n... (truncated, see the run logs)';
-            const body = '### Terraform plan\n<details><summary>Show plan</summary>\n\n```\n' + plan + '\n```\n</details>';
+            let plan = fs.existsSync('plan.txt') ? fs.readFileSync('plan.txt', 'utf8') : '';
+            const match = plan.match(/^Plan: .*$/m) || plan.match(/^No changes\..*$/m);
+            const summary = match ? match[0] : (plan ? 'No summary line found' : 'No plan was produced. A step failed before planning.');
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            if (plan.length > 50000) plan = plan.slice(0, 50000) + '\n... (truncated)';
+            const body = `### Terraform plan\n**${summary}**\n\nFull plan: download the \`terraform-plan\` artifact from [this run](${runUrl}).\n\n<details><summary>Show plan</summary>\n\n\`\`\`\n${plan}\n\`\`\`\n</details>`;
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
