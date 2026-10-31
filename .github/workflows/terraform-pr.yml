@@ -1,0 +1,68 @@
+name: Terraform PR Checks
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "**.tf"
+      - ".terraform.lock.hcl"
+      - ".github/workflows/**"
+
+permissions:
+  id-token: write       # lets the job request an OIDC token for AWS
+  contents: read
+  pull-requests: write  # lets the job comment on the PR
+
+env:
+  TF_VAR_aws_region: ${{ vars.TF_VAR_AWS_REGION }}
+  TF_VAR_project: ${{ vars.TF_VAR_PROJECT }}
+  TF_VAR_environment: ${{ vars.TF_VAR_ENVIRONMENT }}
+  TF_VAR_database_password: ${{ secrets.TF_VAR_DATABASE_PASSWORD }}
+
+jobs:
+  plan:
+    name: fmt, validate, plan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.15.8
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.TF_VAR_AWS_REGION }}
+
+      - name: Terraform fmt
+        run: terraform fmt -check -recursive
+
+      - name: Terraform init
+        run: terraform init -input=false
+
+      - name: Terraform validate
+        run: terraform validate -no-color
+
+      - name: Terraform plan
+        shell: bash
+        run: terraform plan -no-color -input=false -out=tfplan | tee plan.txt
+
+      - name: Post plan to PR
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let plan = fs.existsSync('plan.txt') ? fs.readFileSync('plan.txt', 'utf8') : 'No plan was produced. Check the failed step in the run.';
+            if (plan.length > 60000) plan = plan.slice(0, 60000) + '\n... (truncated, see the run logs)';
+            const body = '### Terraform plan\n<details><summary>Show plan</summary>\n\n```\n' + plan + '\n```\n</details>';
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body
+            });
