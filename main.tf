@@ -52,7 +52,7 @@ module "network" {
 module "storage" {
   source = "git::https://github.com/leyisco101/cob-modules.git//storage?ref=v1.0.0"
 
-  project     = var.project
+  project     = var.projct
   environment = var.environment
 
   bucket_purpose = "application-data"
