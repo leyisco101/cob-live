@@ -61,7 +61,8 @@ module "storage" {
   lifecycle_expiration_days = 90
 
   tags = {
-    Owner = "Platform-Engineering"
+    Owner      = "Platform-Engineering"
+    CostCenter = "data-platform"
   }
 }
 
