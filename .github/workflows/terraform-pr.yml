@@ -3,10 +3,6 @@ name: Terraform PR Checks
 on:
   pull_request:
     branches: [main]
-    paths:
-      - "**.tf"
-      - ".terraform.lock.hcl"
-      - ".github/workflows/**"
 
 permissions:
   id-token: write       # lets the job request an OIDC token for AWS
