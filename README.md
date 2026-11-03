@@ -14,7 +14,7 @@ cob-live (this repo) | The dev deployment, the state configuration and the CI/CD
 
 **Infrastructure (us-east-1):** a VPC with public and private subnets, an internet gateway and a NAT gateway. The private subnets hold an ECS service, an RDS PostgreSQL database and an EC2 instance. Two S3 buckets, a Glue table and an Athena workgroup make up the data platform.
 
-**Supporting setup:** Terraform state is stored in a versioned, encrypted, locked S3 bucket. GitHub authenticates to AWS with OIDC, so no AWS keys are stored anywhere.
+**Supporting setup: Terraform state is stored in a versioned, encrypted, locked S3 bucket. GitHub authenticates to AWS with OIDC, so no AWS keys are stored anywhere.
 
 ## What gets deployed (53 resources)
 
@@ -30,13 +30,13 @@ cob-live (this repo) | The dev deployment, the state configuration and the CI/CD
 
 ## How the pipeline works
 
-**1. Continuous integration (on every pull request)**
+**1. Continuous integration (on every pull request)
 The pipeline runs format check, init, validate and plan. Any failure turns the check red. The plan is posted on the PR with the summary line first, and the full plan is saved as an artifact.
 
 **2. Review and approval**
 Branch protection requires a pull request and a passing check before merging, and it applies to admins too. Merging does not deploy anything by itself.
 
-**3. Continuous delivery (after merge to main)**
+**3. Continuous delivery (after merge to main)
 A plan job runs first. If there are no changes, the apply is skipped. If there are changes, the apply job pauses until an authorised reviewer approves it on the `dev` environment. It then re-plans, confirms the plan matches what was reviewed, applies, and reports success or failure.
 
 **Safeguards**
@@ -59,7 +59,7 @@ To upgrade modules, change the version tag in the module sources in `main.tf` an
 
 | Scenario  What was done  Result 
 
-| First deployment  PR #1 added the pipeline, and the plan showed 53 to add  53 resources created |
+| First deployment  PR #1 added the pipeline, and the plan showed 53 to add  53 resources created 
 | A: valid change  PR #2 added a CostCenter tag to the storage module. The plan showed 0 to add, 1 to change, 0 to destroy.  Merged, approved and applied 
 | B: invalid Terraform  PR #3 used an undeclared variable on purpose  Validate failed, the merge was blocked, and the PR was closed unmerged 
 | C: no changes  A manual run with the infrastructure already up to date  The plan found no changes and the apply was skipped 
